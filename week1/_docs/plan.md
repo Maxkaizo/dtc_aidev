@@ -26,9 +26,9 @@ A couple sharing a home. The MVP supports one household with two profiles.
 - Recurring chores follow a fixed schedule, regardless of when they are completed.
 - An overdue chore keeps its owner. Being overdue is an additional condition, not a workflow status.
 
-## Proposed Decisions to Complete the MVP
+## Implemented Design Decisions
 
-These decisions complement the agreed rules and provide a starting point for implementation:
+These decisions complement the agreed rules and are included in the initial implementation:
 
 | Decision | Rationale |
 | --- | --- |
@@ -66,6 +66,14 @@ These decisions complement the agreed rules and provide a starting point for imp
 - Completing a recurring chore late does not alter the due dates of subsequent occurrences.
 - A new occurrence does not replace or delete an unfinished previous occurrence.
 
-## Pending Technical Decisions
+## Implementation Status
 
-The agreed stack and development conventions are recorded in [AGENTS.md](AGENTS.md). Exact versions and setup details will be defined when implementation begins. This document defines product behavior, not its architecture.
+The initial MVP is implemented with Python 3.12, Django 5.2, Django templates and authentication, SQLite, uv, and Docker Compose. Exact dependency versions are recorded in [uv.lock](../uv.lock).
+
+- Daily, weekly, and monthly recurrences are supported. Opening the board generates missing occurrences through today plus the next future occurrence; no background scheduler runs.
+- Monthly schedules use the last valid day in shorter months and return to the original day afterward.
+- Due dates are calendar dates in the configured household timezone; chores become overdue the following day.
+- Editing/deleting chores and cancelling recurrence are not implemented and were not included in the initial scope.
+- The 16 automated tests passed locally and in Docker during initial validation. Claim exclusivity is tested with sequential competing requests; truly simultaneous requests are not yet covered by a test.
+
+See [README.md](../README.md) for setup and usage, and [AGENTS.md](../AGENTS.md) for development conventions.

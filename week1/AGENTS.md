@@ -2,7 +2,7 @@
 
 ## Scope
 
-`week1/` is the main folder for the shared household chores app. Keep its application code, dependency configuration, and Docker files here. Follow [plan.md](plan.md) for MVP behavior and scope.
+`week1/` is the main folder for the shared household chores app. Keep its application code, dependency configuration, and Docker files here. Follow [product plan](_docs/plan.md) for MVP behavior and scope.
 
 ## Agreed Stack
 
@@ -16,10 +16,10 @@
 ## Development Workflow
 
 - Use the local uv environment for editor support and development tools; use Docker Compose as the local application runtime.
-- Provide `docker compose up --build` as the app startup command from `week1/` once the app is implemented.
+- Provide `docker compose up --build` as the app startup command from `week1/`.
 - Keep database data across container recreation through persistent storage.
 - Keep virtual environments, local databases, secrets, and generated files out of Git.
-- Document setup, migrations, account creation, and run commands in `README.md` as they are implemented.
+- Keep setup, migrations, account creation, and run commands current in `README.md`.
 - Use Python 3.12 and Django 5.2; exact dependency versions are recorded in `uv.lock`.
 - Run `uv run python manage.py test` and `uv run python manage.py check` after application changes.
 - Recurrence is generated on board visits through today plus one future occurrence; preserve the original date anchor and unfinished occurrences.

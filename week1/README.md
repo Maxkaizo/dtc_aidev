@@ -1,12 +1,14 @@
 # Our home — Shared Household Chores
 
-A Django app for a couple to share household chores. `week1/` contains the application, Docker setup, and dependency configuration.
+A Django app for a couple to share household chores. The initial MVP is implemented. `week1/` contains the application, Docker setup, and dependency configuration; `_docs/` contains the product plan.
 
 ## Stack
 
 Python 3.12, Django 5.2, server-rendered templates with plain CSS, SQLite, uv, and Docker Compose. Exact dependency versions are recorded in `uv.lock`.
 
-See [plan.md](plan.md) for product scope and [AGENTS.md](AGENTS.md) for development conventions.
+See [product plan](_docs/plan.md) for product scope and [AGENTS.md](AGENTS.md) for development conventions.
+
+[Plan 2](_docs/plan2.md) covers planned board filters, recurring chore controls, editing, and assignment during creation. These additions are not implemented yet.
 
 ## Run with Docker Compose
 
@@ -76,7 +78,7 @@ To test inside the container:
 docker compose exec web python manage.py test
 ```
 
-Tests cover authentication, the two-partner limit, creation, ownership, claim exclusivity, CSRF protection, completion/release, recurring catch-up, and month-end dates.
+The 16 tests cover authentication, the two-partner limit, creation, ownership, claim exclusivity, CSRF protection, completion/release, recurring catch-up, and month-end dates. Claim exclusivity is checked with sequential competing requests; simultaneous-request testing remains a follow-up.
 
 ## Configuration
 
