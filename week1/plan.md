@@ -68,4 +68,4 @@ These decisions complement the agreed rules and provide a starting point for imp
 
 ## Pending Technical Decisions
 
-The platform, technology stack, profile access, and storage will be defined when implementation begins. This document defines product behavior, not its architecture.
+The agreed stack and development conventions are recorded in [AGENTS.md](AGENTS.md). Exact versions and setup details will be defined when implementation begins. This document defines product behavior, not its architecture.

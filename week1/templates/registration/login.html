@@ -1,0 +1,3 @@
+{% extends 'base.html' %}{% block title %}Sign in · Our home{% endblock %}
+{% block content %}<section class="panel narrow"><p class="eyebrow">WELCOME HOME</p><h1>Let's share the work.</h1><p class="muted">Sign in to see what needs doing.</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}<button>Sign in</button></form></section>{% endblock %}

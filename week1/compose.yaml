@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - .:/app
+      - chore_data:/data
+    environment:
+      DATABASE_PATH: /data/db.sqlite3
+      TIME_ZONE: ${TIME_ZONE:-America/Mexico_City}
+      DJANGO_DEBUG: "1"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-development-only-household-chores}
+volumes:
+  chore_data:

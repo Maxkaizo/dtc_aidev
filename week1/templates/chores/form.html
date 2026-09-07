@@ -1,0 +1,3 @@
+{% extends 'base.html' %}{% block title %}Add a chore · Our home{% endblock %}
+{% block content %}<section class="panel narrow"><a href="{% url 'board' %}">← Back to board</a><h1>Add a chore</h1><p class="muted">Set a due date and let either of you pick it up.</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}<p class="hint">Repeats follow this first due date. Monthly chores use the last day of shorter months and return to the original day afterward.</p><button>Add chore</button></form></section>{% endblock %}
