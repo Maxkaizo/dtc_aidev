@@ -4,6 +4,10 @@
 
 `week1/` is the main folder for the shared household chores app. Keep its application code, dependency configuration, and Docker files here. Follow [product plan](_docs/plan.md) for MVP behavior and scope.
 
+## Working Process
+
+Read and follow [the working process](_docs/process.md) for task selection, role guidance, acceptance review, and commits. This file defines the technical stack and development conventions.
+
 ## Agreed Stack
 
 - **Python and Django:** use Django for application logic, routing, forms, and database access through its ORM.
