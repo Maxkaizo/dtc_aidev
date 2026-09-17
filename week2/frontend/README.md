@@ -21,7 +21,7 @@ All backend access is centralized in `src/api.js`. Event endpoints are public an
 
 Shared links retrieve the same event from the server, including from a fresh browser. Other devices must be able to reach the frontend server; a localhost URL only works on the same computer. The frontend refreshes when returning to its window; reload to fetch changes while staying in the same window. It does not poll or provide live updates.
 
-Backend data is in memory and **resets on backend restart**. Old localStorage-only events are not migrated. Group selection stays local to the current page and does not verify identity.
+Backend data is persisted through SQLAlchemy in SQLite by default and survives restarts. Configure the backend database with `DATABASE_URL`. Old localStorage-only events are not migrated. Group selection stays local to the current page and does not verify identity.
 
 `src/calculations.js` computes exact-cent allocations and settlements. Google Fonts are optional, with system-font fallbacks.
 
@@ -32,4 +32,4 @@ npm test                  # HTTP client and calculation unit tests
 npm run test:integration   # Real backend + frontend proxy, requires uv
 ```
 
-The integration check starts and stops an isolated backend on port 18080 and a frontend on an available port. Set `INTEGRATION_BACKEND_PORT` if 18080 is occupied. It exercises all five client methods, fresh-client access, exact settlement, validation, missing events, and backend unavailability.
+The integration check starts and stops an isolated backend with a temporary SQLite database on port 18080 and a frontend on an available port. Set `INTEGRATION_BACKEND_PORT` if 18080 is occupied. It exercises all five client methods, fresh-client access, exact settlement, validation, missing events, and backend unavailability.

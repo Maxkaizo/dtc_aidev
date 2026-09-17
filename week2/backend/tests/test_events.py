@@ -2,8 +2,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from app.database import Database
 from app.models import CreateExpenseRequest
-from app.store import MAX_SAFE_INTEGER, EventStore
+from app.store import EventStore
 
 
 def test_seed_and_independent_demos(client):
@@ -116,18 +117,21 @@ def test_missing_event_and_foreign_group(client):
     assert client.get(f"/api/events/{empty['id']}").json()["expenses"] == []
 
 
-def test_total_overflow_is_atomic(client):
-    # Inject a near-limit fixture without allocating 900,000 expense records.
-    event = client.app.state.store._events["demo"]
-    event.expenses = [event.expenses[0].model_copy(update={"amount": MAX_SAFE_INTEGER - 1})]
+def test_total_overflow_is_atomic(client, monkeypatch):
+    before = client.get("/api/events/demo").json()
+    # Lower the cap to exercise the real validation path without 900,000 records.
+    monkeypatch.setattr("app.store.MAX_SAFE_INTEGER", 99001)
     expense = {"description": "X", "amount": 2, "category": "food", "groupId": "ana"}
     response = client.post("/api/events/demo/expenses", json=expense)
     assert response.status_code == 422
-    assert len(event.expenses) == 1
+    assert client.get("/api/events/demo").json() == before
 
 
-def test_concurrent_writes_and_detached_snapshots():
-    store = EventStore()
+def test_concurrent_writes_and_detached_snapshots(tmp_path):
+    database = Database(f"sqlite:///{tmp_path / 'concurrent.db'}")
+    database.initialize()
+    store = EventStore(database)
+    store.seed()
     expense = CreateExpenseRequest(description="X", amount=1, category="general", groupId="ana")
     with ThreadPoolExecutor(max_workers=8) as executor:
         list(executor.map(lambda _: store.add_expense("demo", expense), range(40)))
@@ -136,6 +140,7 @@ def test_concurrent_writes_and_detached_snapshots():
     assert len({e.id for e in snapshot.expenses}) == 44
     snapshot.groups.clear()
     assert len(store.get("demo").groups) == 2
+    database.close()
 
 
 def test_validation_errors_and_cors(client):

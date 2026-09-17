@@ -22,7 +22,7 @@ help:
 	@echo "Backend docs: http://$(BACKEND_HOST):$(BACKEND_PORT)/docs"
 	@echo "Frontend:     http://localhost:$(FRONTEND_PORT)"
 	@echo "Override ports: make run BACKEND_PORT=8001"
-	@echo "Start backend and frontend in separate terminals. Backend data resets on restart."
+	@echo "Start backend and frontend in separate terminals. Data persists in SQLite by default; configure with DATABASE_URL."
 
 install:
 	cd backend && uv sync --locked

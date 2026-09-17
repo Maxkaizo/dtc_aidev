@@ -1,8 +1,12 @@
-"""Process-local storage with atomic writes and detached read snapshots."""
+"""Transactional event repository backed by SQLAlchemy."""
 
-from threading import RLock
 from uuid import uuid4
 
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+
+from .database import Database
+from .db_models import AttendeeRow, EventRow, ExpenseRow, GroupRow
 from .models import (
     Attendee,
     CreateEventRequest,
@@ -77,36 +81,137 @@ def demo_event(event_id: str) -> Event:
 
 
 class EventStore:
-    def __init__(self, seed: bool = True):
-        self._lock = RLock()
-        self._events: dict[str, Event] = {}
-        if seed:
-            self._events[SEED_EVENT_ID] = demo_event(SEED_EVENT_ID)
+    def __init__(self, database: Database):
+        self.database = database
 
-    def _get(self, event_id: str) -> Event:
-        if event_id not in self._events:
+    def seed(self):
+        try:
+            with self.database.sessions.begin() as session:
+                self._insert(session, demo_event(SEED_EVENT_ID))
+        except IntegrityError:
+            # A unique event ID makes seeding idempotent, including concurrent starts.
+            with self.database.sessions() as session:
+                if session.get(EventRow, SEED_EVENT_ID) is None:
+                    raise
+
+    def _insert(self, session, event: Event):
+        session.add(EventRow(id=event.id, name=event.name, currency=event.currency))
+        session.flush()
+        for position, group in enumerate(event.groups):
+            self._insert_group(session, event.id, group, position)
+        for position, expense in enumerate(event.expenses):
+            session.add(
+                ExpenseRow(
+                    event_id=event.id,
+                    id=expense.id,
+                    description=expense.description,
+                    amount=expense.amount,
+                    category=expense.category,
+                    group_id=expense.groupId,
+                    position=position,
+                )
+            )
+        session.flush()
+
+    def _insert_group(self, session, event_id: str, group: Group, position: int):
+        session.add(
+            GroupRow(
+                event_id=event_id,
+                id=group.id,
+                name=group.name,
+                representative=group.representative,
+                position=position,
+            )
+        )
+        session.flush()
+        for index, attendee in enumerate(group.attendees):
+            session.add(
+                AttendeeRow(
+                    event_id=event_id,
+                    id=attendee.id,
+                    group_id=group.id,
+                    name=attendee.name,
+                    categories=attendee.categories,
+                    position=index,
+                )
+            )
+        session.flush()
+
+    def _read(self, session, event_id: str) -> Event:
+        # Row-locking databases keep all component reads consistent with writers.
+        # SQLite ignores FOR UPDATE and uses its explicit transaction snapshot.
+        row = session.scalar(select(EventRow).where(EventRow.id == event_id).with_for_update())
+        if row is None:
             raise StoreError(404, "event_not_found", "No se encontró el evento.")
-        return self._events[event_id]
+        groups = session.scalars(
+            select(GroupRow).where(GroupRow.event_id == event_id).order_by(GroupRow.position)
+        ).all()
+        attendees = session.scalars(
+            select(AttendeeRow)
+            .where(AttendeeRow.event_id == event_id)
+            .order_by(AttendeeRow.position)
+        ).all()
+        expenses = session.scalars(
+            select(ExpenseRow).where(ExpenseRow.event_id == event_id).order_by(ExpenseRow.position)
+        ).all()
+        return Event(
+            id=row.id,
+            name=row.name,
+            currency=row.currency,
+            groups=[
+                Group(
+                    id=g.id,
+                    name=g.name,
+                    representative=g.representative,
+                    attendees=[
+                        Attendee(id=a.id, name=a.name, categories=a.categories)
+                        for a in attendees
+                        if a.group_id == g.id
+                    ],
+                )
+                for g in groups
+            ],
+            expenses=[
+                Expense(
+                    id=e.id,
+                    description=e.description,
+                    amount=e.amount,
+                    category=e.category,
+                    groupId=e.group_id,
+                )
+                for e in expenses
+            ],
+        )
+
+    def _lock(self, session, event_id: str):
+        # A real UPDATE serializes event writes on SQLite and row-locking databases.
+        # Unlike SELECT FOR UPDATE alone, this also protects SQLite writes.
+        result = session.execute(
+            update(EventRow).where(EventRow.id == event_id).values(revision=EventRow.revision + 1)
+        )
+        if result.rowcount == 0:
+            raise StoreError(404, "event_not_found", "No se encontró el evento.")
 
     def get(self, event_id: str) -> Event:
-        with self._lock:
-            return self._get(event_id).model_copy(deep=True)
+        with self.database.sessions.begin() as session:
+            return self._read(session, event_id)
 
     def create(self, data: CreateEventRequest) -> Event:
-        with self._lock:
-            event = Event(id=str(uuid4()), **data.model_dump(), groups=[], expenses=[])
-            self._events[event.id] = event
-            return event.model_copy(deep=True)
+        event = Event(id=str(uuid4()), **data.model_dump(), groups=[], expenses=[])
+        with self.database.sessions.begin() as session:
+            self._insert(session, event)
+        return event
 
     def create_demo(self) -> Event:
-        with self._lock:
-            event = demo_event(str(uuid4()))
-            self._events[event.id] = event
-            return event.model_copy(deep=True)
+        event = demo_event(str(uuid4()))
+        with self.database.sessions.begin() as session:
+            self._insert(session, event)
+        return event
 
     def add_group(self, event_id: str, data: CreateGroupRequest) -> Event:
-        with self._lock:
-            event = self._get(event_id)
+        with self.database.sessions.begin() as session:
+            self._lock(session, event_id)
+            event = self._read(session, event_id)
             attendees = [
                 Attendee(
                     id=str(uuid4()),
@@ -115,22 +220,33 @@ class EventStore:
                 )
                 for a in data.attendees
             ]
-            event.groups.append(
-                Group(
-                    id=str(uuid4()),
-                    name=data.name,
-                    representative=data.representative,
-                    attendees=attendees,
-                )
+            group = Group(
+                id=str(uuid4()),
+                name=data.name,
+                representative=data.representative,
+                attendees=attendees,
             )
-            return event.model_copy(deep=True)
+            self._insert_group(session, event_id, group, len(event.groups))
+            return self._read(session, event_id)
 
     def add_expense(self, event_id: str, data: CreateExpenseRequest) -> Event:
-        with self._lock:
-            event = self._get(event_id)
+        with self.database.sessions.begin() as session:
+            self._lock(session, event_id)
+            event = self._read(session, event_id)
             if not any(g.id == data.groupId for g in event.groups):
                 raise StoreError(422, "validation_error", "El grupo no pertenece a este evento.")
             if sum(e.amount for e in event.expenses) + data.amount > MAX_SAFE_INTEGER:
                 raise StoreError(422, "validation_error", "El total excede el límite permitido.")
-            event.expenses.append(Expense(id=str(uuid4()), **data.model_dump()))
-            return event.model_copy(deep=True)
+            session.add(
+                ExpenseRow(
+                    event_id=event_id,
+                    id=str(uuid4()),
+                    description=data.description,
+                    amount=data.amount,
+                    category=data.category,
+                    group_id=data.groupId,
+                    position=len(event.expenses),
+                )
+            )
+            session.flush()
+            return self._read(session, event_id)

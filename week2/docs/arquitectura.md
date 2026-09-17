@@ -21,7 +21,7 @@ flowchart TD
     N["Navegador<br/>Página abierta en http://localhost:5173<br/>Interfaz y cálculo del reparto"]
     F["Servidor frontend: Node.js<br/>Puerto 5173<br/>Entrega archivos y reenvía llamadas API"]
     B["Backend: FastAPI<br/>http://127.0.0.1:8000<br/>Valida y guarda datos"]
-    M[("Memoria del backend<br/>Eventos, grupos, asistentes y gastos<br/>Cuentas opcionales y tokens")]
+    M[("Base de datos · SQLAlchemy<br/>SQLite por defecto<br/>Eventos, grupos, asistentes y gastos<br/>Cuentas opcionales y tokens")]
 
     N -->|"GET http://localhost:5173/"| F
     F -->|"HTML, CSS y JavaScript"| N
@@ -65,7 +65,7 @@ sequenceDiagram
     activate F
     F->>B: GET http://127.0.0.1:8000/api/events/demo
     activate B
-    Note over B: Busca el evento en memoria
+    Note over B: Consulta el evento en la base de datos
     B-->>F: 200 OK + datos del evento en JSON
     deactivate B
     F-->>N: 200 OK + los mismos datos JSON
@@ -82,7 +82,7 @@ Las flechas continuas representan peticiones y las punteadas representan respues
 2. El JavaScript de la página lee `event=demo` y llama a `api.getEvent('demo')`.
 3. El cliente HTTP solicita **`/api/events/demo`**. Como no incluye un servidor completo, el navegador usa la dirección de la página y forma **http://localhost:5173/api/events/demo**.
 4. Node.js recibe la solicitud en el puerto **5173**. Al reconocer el prefijo `/api/`, la reenvía a **http://127.0.0.1:8000/api/events/demo**.
-5. FastAPI busca el evento `demo` en su memoria y devuelve sus datos en JSON.
+5. FastAPI consulta el evento `demo` en la base de datos y devuelve sus datos en JSON.
 6. Node.js devuelve ese JSON al navegador. La página muestra los grupos y gastos, y calcula el reparto.
 
 **Por eso hay dos respuestas a “¿qué URL usa?”:**
@@ -153,11 +153,12 @@ El navegador sigue solicitando `http://localhost:5173/api/...`. Solo cambia el d
 - [Cliente HTTP del navegador](../frontend/src/api.js): usa `/api` como ruta base.
 - [Servidor Node.js y proxy](../frontend/server.js): reenvía `/api/...` a `BACKEND_URL`, cuyo valor predeterminado es `http://127.0.0.1:8000`.
 - [Aplicación FastAPI](../backend/app/main.py): configura el backend y sus routers.
-- [Almacenamiento](../backend/app/store.py): guarda y precarga los eventos en memoria.
+- [Configuración de la base de datos](../backend/app/database.py): lee `DATABASE_URL` y configura las conexiones.
+- [Almacenamiento](../backend/app/store.py): guarda los eventos con SQLAlchemy y crea el ejemplo solo si no existe.
 - [Makefile](../Makefile): define los comandos y puertos de desarrollo.
 
 ## Duración de los datos y enlaces compartidos
 
-Los datos viven en la memoria del backend: **se borran al reiniciarlo** y vuelve a crearse el ejemplo inicial. La aplicación todavía no usa una base de datos persistente.
+Los datos se guardan en una **base de datos persistente** mediante SQLAlchemy y sobreviven a los reinicios. Por defecto se usa SQLite en `backend/chip_in.db`. La variable de entorno `DATABASE_URL` permite elegir otra conexión. El ejemplo inicial se crea solo si no existe; no se sobrescriben los cambios guardados.
 
 Un enlace compartido permite consultar el mismo evento desde otro navegador mientras este pueda alcanzar el servidor frontend. En otro dispositivo, `localhost` apunta a ese otro dispositivo; para acceder al servidor debes usar una dirección de la computadora que lo ejecuta y que sea accesible desde la red.

@@ -1,5 +1,8 @@
 // Run with npm run test:integration; requires uv and the backend dependencies.
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +12,10 @@ import { calculate } from '../src/calculations.js';
 
 const port = process.env.INTEGRATION_BACKEND_PORT || '18080';
 const backendUrl = `http://127.0.0.1:${port}`;
+const databaseDir = await mkdtemp(path.join(tmpdir(), 'chip-in-integration-'));
+const databaseUrl = `sqlite:///${path.join(databaseDir, 'test.db')}`;
 const backend = spawn('uv', ['run', '--locked', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', port], {
+  env: { ...process.env, DATABASE_URL: databaseUrl },
   cwd: fileURLToPath(new URL('../../backend/', import.meta.url)), stdio: ['ignore', 'pipe', 'pipe'],
 });
 let output = '', spawnError;
@@ -60,4 +66,5 @@ try {
   if (server.listening) await new Promise(resolve => server.close(resolve));
   if (backend.exitCode === null && !spawnError) backend.kill('SIGTERM');
   await exited;
+  await rm(databaseDir, { recursive: true, force: true });
 }

@@ -1,10 +1,8 @@
 """Optional accounts with Argon2 passwords and expiring opaque bearer tokens."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from hashlib import sha256
 from secrets import token_urlsafe
-from threading import RLock
 from time import time
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -13,7 +11,11 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
 from pydantic import Field, StringConstraints
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
+from .database import Database
+from .db_models import AccountRow, TokenRow
 from .models import Model
 from .store import StoreError
 
@@ -47,58 +49,63 @@ class Token(Model):
     expires_in: int = TOKEN_TTL_SECONDS
 
 
-@dataclass(frozen=True)
-class Account:
-    id: str
-    username: str
-    password_hash: str
-
-
 class AuthStore:
-    def __init__(self, clock: Callable[[], float] = time):
-        self._lock = RLock()
+    def __init__(self, database: Database, clock: Callable[[], float] = time):
+        self.database = database
         self._clock = clock
         self._hasher = PasswordHash.recommended()
         self._dummy_hash = self._hasher.hash(token_urlsafe(32))
-        self._accounts: dict[str, Account] = {}
-        # Only SHA-256 token digests are stored, never raw bearer tokens.
-        self._tokens: dict[str, tuple[str, float]] = {}
 
     def register(self, data: Credentials) -> User:
-        password_hash = self._hasher.hash(data.password)
-        with self._lock:
-            if data.username in self._accounts:
-                raise StoreError(409, "username_taken", "Ese nombre de usuario ya está registrado.")
-            account = Account(str(uuid4()), data.username, password_hash)
-            self._accounts[account.username] = account
-            return User(id=account.id, username=account.username)
+        account = AccountRow(
+            id=str(uuid4()), username=data.username, password_hash=self._hasher.hash(data.password)
+        )
+        try:
+            with self.database.sessions.begin() as session:
+                session.add(account)
+        except IntegrityError:
+            with self.database.sessions() as session:
+                if (
+                    session.scalar(select(AccountRow).where(AccountRow.username == data.username))
+                    is None
+                ):
+                    raise
+            raise StoreError(
+                409, "username_taken", "Ese nombre de usuario ya está registrado."
+            ) from None
+        return User(id=account.id, username=account.username)
 
     def login(self, data: Credentials) -> Token:
-        with self._lock:
-            account = self._accounts.get(data.username)
-        valid = self._hasher.verify(
-            data.password, account.password_hash if account else self._dummy_hash
-        )
-        if not valid or account is None:
-            raise unauthorized()
+        with self.database.sessions() as session:
+            account = session.scalar(select(AccountRow).where(AccountRow.username == data.username))
+            valid = self._hasher.verify(
+                data.password, account.password_hash if account else self._dummy_hash
+            )
+            if not valid or account is None:
+                raise unauthorized()
+            account_id = account.id
         token = token_urlsafe(32)
         now = self._clock()
-        with self._lock:
-            self._tokens = {key: value for key, value in self._tokens.items() if value[1] > now}
-            self._tokens[sha256(token.encode()).hexdigest()] = (
-                account.username,
-                now + TOKEN_TTL_SECONDS,
+        with self.database.sessions.begin() as session:
+            session.execute(delete(TokenRow).where(TokenRow.expires_at <= now))
+            session.add(
+                TokenRow(
+                    digest=sha256(token.encode()).hexdigest(),
+                    account_id=account_id,
+                    expires_at=now + TOKEN_TTL_SECONDS,
+                )
             )
         return Token(access_token=token)
 
     def authenticate(self, token: str) -> User:
         digest = sha256(token.encode()).hexdigest()
-        with self._lock:
-            session = self._tokens.get(digest)
-            if session is None or session[1] <= self._clock():
-                self._tokens.pop(digest, None)
+        with self.database.sessions() as session:
+            row = session.get(TokenRow, digest)
+            if row is None or row.expires_at <= self._clock():
                 raise unauthorized()
-            account = self._accounts[session[0]]
+            account = session.get(AccountRow, row.account_id)
+            if account is None:
+                raise unauthorized()
             return User(id=account.id, username=account.username)
 
 

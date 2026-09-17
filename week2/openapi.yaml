@@ -10,8 +10,9 @@ info:
     envelope, including group and attendee registration order. After each write,
     the client replaces its event state with this response. Persist events so
     they can be retrieved on another device using their shared event ID.
-    The in-memory backend resets events, accounts, and tokens on restart and seeds
-    the example event with ID "demo" at startup. Run a single worker.
+    The backend persists events, accounts, and token hashes through SQLAlchemy.
+    DATABASE_URL configures the database; SQLite is the default. Data survives
+    restarts. The example event with ID "demo" is inserted only when absent.
     The frontend constructs its own shared URL as /?event={eventId}; no share-link
     endpoint or share URL field is required.
 
@@ -224,7 +225,7 @@ paths:
       tags: [Authentication]
       operationId: login
       summary: Exchange credentials for an expiring bearer token
-      description: Returns an opaque token valid for 3600 seconds. Tokens are stored as hashes in memory.
+      description: Returns an opaque token valid for 3600 seconds. Token hashes are persisted in the database; expiry is unchanged across restarts.
       security: []
       requestBody:
         required: true

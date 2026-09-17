@@ -1,6 +1,9 @@
-"""Application factory; every instance owns an isolated in-memory store."""
+"""Application factory with database startup and connection cleanup."""
 
 import os
+from collections.abc import Callable
+from contextlib import asynccontextmanager
+from time import time
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -8,22 +11,37 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .auth import AuthStore
+from .database import Database
 from .routers import auth, events
 from .store import EventStore, StoreError
 
 
-def create_app(store: EventStore | None = None, auth_store: AuthStore | None = None) -> FastAPI:
+def create_app(database_url: str | None = None, clock: Callable[[], float] = time) -> FastAPI:
+    database = Database(database_url)
+    store = EventStore(database)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        try:
+            database.initialize()
+            store.seed()
+            app.state.auth = AuthStore(database, clock=clock)
+            yield
+        finally:
+            database.close()
+
     app = FastAPI(
+        lifespan=lifespan,
         title="Chip In API",
         version="1.0.0",
         description=(
             "Event endpoints are public. Optional accounts use /api/auth/register and "
             "/api/auth/login; only /api/auth/me requires a bearer token. "
-            "The seeded event is available at /api/events/demo. All data resets on restart."
+            "The seeded event is available at /api/events/demo. Data is persisted in the configured database."
         ),
     )
-    app.state.store = store if store is not None else EventStore()
-    app.state.auth = auth_store if auth_store is not None else AuthStore()
+    app.state.database = database
+    app.state.store = store
     origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     app.add_middleware(
         CORSMiddleware,
