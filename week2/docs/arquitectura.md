@@ -44,6 +44,38 @@ GET localhost:5173/api/... --> puerto 5173
 <---------------------------- devuelve la respuesta
 ```
 
+## Diagrama de secuencia
+
+Este diagrama tipo escalera se lee de arriba hacia abajo. Node.js actúa como intermediario: recibe la petición del navegador y la reenvía a FastAPI.
+
+```mermaid
+sequenceDiagram
+    participant N as Navegador
+    participant F as Node.js · puerto 5173
+    participant B as FastAPI · puerto 8000
+
+    N->>F: GET http://localhost:5173/?event=demo
+    F-->>N: HTML de la página
+    N->>F: Solicita CSS y JavaScript
+    F-->>N: Archivos CSS y JavaScript
+
+    Note over N: La página solicita el evento demo
+
+    N->>F: GET http://localhost:5173/api/events/demo
+    activate F
+    F->>B: GET http://127.0.0.1:8000/api/events/demo
+    activate B
+    Note over B: Busca el evento en memoria
+    B-->>F: 200 OK + datos del evento en JSON
+    deactivate B
+    F-->>N: 200 OK + los mismos datos JSON
+    deactivate F
+
+    Note over N: Muestra los grupos y gastos
+```
+
+Las flechas continuas representan peticiones y las punteadas representan respuestas. Node.js no se llama a sí mismo ni redirige el navegador a otra URL: hace una petición a FastAPI y devuelve su respuesta al navegador.
+
 ## Ejemplo: abrir el evento de demostración
 
 1. Abres **http://localhost:5173/?event=demo**. Esta es la URL de la página.
