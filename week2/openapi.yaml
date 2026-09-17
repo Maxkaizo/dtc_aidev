@@ -1,0 +1,447 @@
+openapi: 3.1.0
+info:
+  title: Chip In API
+  version: 1.0.0
+  description: |
+    Proposed HTTP contract for week2/frontend/src/api.js. The current client is
+    a localStorage mock and does not yet issue HTTP requests; the paths and HTTP
+    status codes below define its backend replacement.
+
+    Every successful operation returns the complete Event object, without an
+    envelope, including group and attendee registration order. After each write,
+    the client replaces its event state with this response. Persist events so
+    they can be retrieved on another device using their shared event ID.
+    The frontend constructs its own shared URL as /?event={eventId}; no share-link
+    endpoint or share URL field is required.
+
+    No endpoint requires authentication. There are no accounts, credentials,
+    sessions, or identity verification. Anyone with an event ID can read it and
+    append groups or expenses. Selecting a group is local UI state, not login
+    or proof of identity. The paying group may differ from the selected group.
+
+    All money is expressed in integer cents in the event's fixed currency.
+    The frontend calculates category totals, allocations, balances, and transfers
+    locally; separate calculation or payment endpoints are not required.
+    Categories are fixed client-side. Editing and deletion are out of scope.
+
+    HTTP failures use Error responses. The future HTTP adapter should throw an
+    Error with the response message, preserving the UI's existing error handling.
+servers:
+  - url: /api
+    description: Proposed same-origin API prefix; paths below are relative to /api.
+security: []
+tags:
+  - name: Events
+  - name: Groups
+  - name: Expenses
+paths:
+  /events:
+    post:
+      tags: [Events]
+      operationId: createEvent
+      summary: Create an empty event
+      description: Maps to api.createEvent(name, currency). No authentication required.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventRequest'
+            example:
+              name: Domingo entre amigos
+              currency: MXN
+      responses:
+        '201':
+          description: Created event with a generated ID and empty groups and expenses arrays.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+              example:
+                id: 8977846d-0cee-4b74-96de-27c3ff29dbf6
+                name: Domingo entre amigos
+                currency: MXN
+                groups: []
+                expenses: []
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /events/demo:
+    post:
+      tags: [Events]
+      operationId: createDemo
+      summary: Create a new persisted example event
+      description: |
+        Maps to api.createDemo(). No authentication or request body required.
+        Each call creates a separate event with a new event ID, seeded with the
+        groups and expenses in DemoEvent. Group, attendee, and expense IDs in this
+        fixture are literal strings, matching the client, and scoped to the event.
+        This preserves the frontend's selection of group "ana" after demo creation.
+        The example totals 99000 cents and yields one 4000-cent transfer from
+        Luis to Ana. Register this static route before /events/{eventId} in
+        frameworks whose routing depends on declaration order.
+      security: []
+      responses:
+        '201':
+          description: Complete, newly persisted demo event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+              examples:
+                demo:
+                  $ref: '#/components/examples/DemoEvent'
+  /events/{eventId}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Events]
+      operationId: getEvent
+      summary: Retrieve the complete saved event
+      description: |
+        Maps to api.getEvent(eventId). No authentication or request body required.
+        The eventId comes from the frontend shared link's event query parameter.
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/EventResponse'
+        '404':
+          $ref: '#/components/responses/EventNotFound'
+  /events/{eventId}/groups:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Groups]
+      operationId: addGroup
+      summary: Append a group and its attendees
+      description: |
+        Maps to api.addGroup(eventId, group). No authentication required.
+        Generate group and attendee IDs. Append the group after existing groups
+        and preserve the submitted attendee order. This ordering determines who
+        receives leftover cents during allocation. Always include "general" in
+        each attendee's returned categories, and remove duplicate categories.
+        Do not automatically add the representative as an attendee: the client
+        explicitly submits them in attendees if they attend.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupRequest'
+            example:
+              name: Familia de Ana
+              representative: Ana
+              attendees:
+                - name: Ana
+                  categories: [food, drinks]
+                - name: Peque de Ana
+                  categories: [food, games]
+      responses:
+        '201':
+          description: Complete updated event, with the newly created group last in groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '404':
+          $ref: '#/components/responses/EventNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /events/{eventId}/expenses:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Expenses]
+      operationId: addExpense
+      summary: Append an expense paid by an existing group
+      description: |
+        Maps to api.addExpense(eventId, expense). No authentication required.
+        Generate the expense ID and append the expense in entry order. groupId
+        must identify a group in this event, or return 422. The group is credited
+        with the payment regardless of its members' category participation.
+        The sum of all event expenses after insertion must not exceed
+        9007199254740991 cents (JavaScript's maximum safe integer), or return 422.
+        Accept expenses in categories with no participants: the UI displays the
+        incomplete allocation and blocks settlement until participants are added.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExpenseRequest'
+            example:
+              description: Servilletas
+              amount: 9000
+              category: general
+              groupId: luis
+      responses:
+        '201':
+          description: Complete updated event, with the newly created expense last in expenses.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '404':
+          $ref: '#/components/responses/EventNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+components:
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      description: Opaque event identifier returned by createEvent or createDemo.
+      schema:
+        $ref: '#/components/schemas/Id'
+  responses:
+    EventResponse:
+      description: Complete saved event.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Event'
+          examples:
+            demo:
+              $ref: '#/components/examples/DemoEvent'
+    EventNotFound:
+      description: No event exists with this ID.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: event_not_found
+            message: No se encontró el evento.
+    ValidationError:
+      description: |
+        Invalid request body or field, blank name, unsupported category/currency,
+        invalid amount, paying group outside the event, or event total overflow.
+        No partial changes are persisted.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: validation_error
+            message: Revisa los datos enviados.
+  schemas:
+    Id:
+      type: string
+      minLength: 1
+      description: Opaque identifier. Do not require UUID format; demo IDs include ana and luis.
+    PersonName:
+      type: string
+      minLength: 1
+      maxLength: 80
+      pattern: '\S'
+      description: Trim leading and trailing whitespace; must not be blank after trimming.
+    Category:
+      type: string
+      enum: [food, drinks, games, general]
+      description: Food, alcoholic beverages, games, and general expenses respectively.
+    Currency:
+      type: string
+      enum: [MXN, USD, EUR]
+      description: One fixed currency per event; all supported currencies use cents.
+    CreateEventRequest:
+      type: object
+      additionalProperties: false
+      required: [name, currency]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '\S'
+          description: Trim leading and trailing whitespace; must not be blank after trimming.
+        currency:
+          $ref: '#/components/schemas/Currency'
+    CreateAttendeeRequest:
+      type: object
+      additionalProperties: false
+      required: [name, categories]
+      properties:
+        name:
+          $ref: '#/components/schemas/PersonName'
+        categories:
+          type: array
+          description: May be empty. Deduplicate values and always add general before saving.
+          items:
+            $ref: '#/components/schemas/Category'
+    CreateGroupRequest:
+      type: object
+      additionalProperties: false
+      required: [name, representative, attendees]
+      properties:
+        name:
+          $ref: '#/components/schemas/PersonName'
+        representative:
+          $ref: '#/components/schemas/PersonName'
+        attendees:
+          type: array
+          minItems: 1
+          description: Registration order; representative is included explicitly if attending.
+          items:
+            $ref: '#/components/schemas/CreateAttendeeRequest'
+    CreateExpenseRequest:
+      type: object
+      additionalProperties: false
+      required: [description, amount, category, groupId]
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '\S'
+          description: Trim leading and trailing whitespace; must not be blank after trimming.
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 10000000000
+          description: Positive integer cents, not currency units. For example, 9000 means 90.00.
+        category:
+          $ref: '#/components/schemas/Category'
+        groupId:
+          $ref: '#/components/schemas/Id'
+    Attendee:
+      type: object
+      additionalProperties: false
+      required: [id, name, categories]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          $ref: '#/components/schemas/PersonName'
+        categories:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Category'
+          contains:
+            const: general
+          description: Always contains general, even if not submitted by the client.
+    Group:
+      type: object
+      additionalProperties: false
+      required: [id, name, representative, attendees]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          $ref: '#/components/schemas/PersonName'
+        representative:
+          $ref: '#/components/schemas/PersonName'
+        attendees:
+          type: array
+          minItems: 1
+          description: Stable registration order within this group.
+          items:
+            $ref: '#/components/schemas/Attendee'
+    Expense:
+      type: object
+      additionalProperties: false
+      required: [id, description, amount, category, groupId]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        description:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '\S'
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 10000000000
+          description: Amount paid in integer cents of the event currency.
+        category:
+          $ref: '#/components/schemas/Category'
+        groupId:
+          $ref: '#/components/schemas/Id'
+    Event:
+      type: object
+      additionalProperties: false
+      required: [id, name, currency, groups, expenses]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '\S'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        groups:
+          type: array
+          description: Stable group registration order; IDs are unique within the event.
+          items:
+            $ref: '#/components/schemas/Group'
+        expenses:
+          type: array
+          description: Entry order. Each groupId references a group in this event.
+          items:
+            $ref: '#/components/schemas/Expense'
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [event_not_found, validation_error]
+        message:
+          type: string
+          minLength: 1
+          description: Human-readable Spanish message for display by the frontend.
+  examples:
+    DemoEvent:
+      summary: Exact data returned by the current createDemo mock, apart from the generated event ID.
+      value:
+        id: 8977846d-0cee-4b74-96de-27c3ff29dbf6
+        name: Domingo entre amigos
+        currency: MXN
+        groups:
+          - id: ana
+            name: Familia de Ana
+            representative: Ana
+            attendees:
+              - id: a
+                name: Ana
+                categories: [food, drinks, general]
+              - id: b
+                name: Peque de Ana
+                categories: [food, games, general]
+          - id: luis
+            name: Luis
+            representative: Luis
+            attendees:
+              - id: c
+                name: Luis
+                categories: [food, drinks, general]
+        expenses:
+          - id: '1'
+            description: Comida para compartir
+            category: food
+            amount: 60000
+            groupId: ana
+          - id: '2'
+            description: Bebidas para brindar
+            category: drinks
+            amount: 20000
+            groupId: luis
+          - id: '3'
+            description: Actividad para peques
+            category: games
+            amount: 10000
+            groupId: ana
+          - id: '4'
+            description: Servilletas
+            category: general
+            amount: 9000
+            groupId: luis
