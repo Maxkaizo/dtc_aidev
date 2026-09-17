@@ -3,9 +3,8 @@ info:
   title: Chip In API
   version: 1.0.0
   description: |
-    Proposed HTTP contract for week2/frontend/src/api.js. The current client is
-    a localStorage mock and does not yet issue HTTP requests; the paths and HTTP
-    status codes below define its backend replacement.
+    HTTP contract implemented by the FastAPI backend and consumed by
+    week2/frontend/src/api.js through the frontend server's /api proxy.
 
     Every successful operation returns the complete Event object, without an
     envelope, including group and attendee registration order. After each write,
@@ -28,11 +27,11 @@ info:
     locally; separate calculation or payment endpoints are not required.
     Categories are fixed client-side. Editing and deletion are out of scope.
 
-    HTTP failures use Error responses. The future HTTP adapter should throw an
+    HTTP failures use Error responses. The HTTP adapter throws an
     Error with the response message, preserving the UI's existing error handling.
 servers:
   - url: /api
-    description: Proposed same-origin API prefix; paths below are relative to /api.
+    description: Same-origin API prefix; paths below are relative to /api.
 security: []
 tags:
   - name: Events
@@ -534,7 +533,7 @@ components:
           description: Human-readable Spanish message for display by the frontend.
   examples:
     DemoEvent:
-      summary: Exact data returned by the current createDemo mock, apart from the generated event ID.
+      summary: Data returned by createDemo, apart from the generated event ID.
       value:
         id: 8977846d-0cee-4b74-96de-27c3ff29dbf6
         name: Domingo entre amigos

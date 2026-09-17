@@ -1,0 +1,78 @@
+{
+  "id": "demo",
+  "name": "Domingo entre amigos",
+  "currency": "MXN",
+  "groups": [
+    {
+      "id": "ana",
+      "name": "Familia de Ana",
+      "representative": "Ana",
+      "attendees": [
+        {
+          "id": "a",
+          "name": "Ana",
+          "categories": [
+            "food",
+            "drinks",
+            "general"
+          ]
+        },
+        {
+          "id": "b",
+          "name": "Peque de Ana",
+          "categories": [
+            "food",
+            "games",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "luis",
+      "name": "Luis",
+      "representative": "Luis",
+      "attendees": [
+        {
+          "id": "c",
+          "name": "Luis",
+          "categories": [
+            "food",
+            "drinks",
+            "general"
+          ]
+        }
+      ]
+    }
+  ],
+  "expenses": [
+    {
+      "id": "1",
+      "description": "Comida para compartir",
+      "category": "food",
+      "amount": 60000,
+      "groupId": "ana"
+    },
+    {
+      "id": "2",
+      "description": "Bebidas para brindar",
+      "category": "drinks",
+      "amount": 20000,
+      "groupId": "luis"
+    },
+    {
+      "id": "3",
+      "description": "Actividad para peques",
+      "category": "games",
+      "amount": 10000,
+      "groupId": "ana"
+    },
+    {
+      "id": "4",
+      "description": "Servilletas",
+      "category": "general",
+      "amount": 9000,
+      "groupId": "luis"
+    }
+  ]
+}

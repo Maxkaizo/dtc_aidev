@@ -41,9 +41,9 @@ Passwords use salted Argon2id hashes through pwdlib. Tokens are random opaque va
 
 ## Frontend integration
 
-The existing frontend still uses its localStorage mock; this task adds the backend without replacing that client. To connect it later, replace the five methods in `frontend/src/api.js` with HTTP calls to these routes. Every success returns the complete event object. The server seed can be loaded using `getEvent('demo')` once connected.
+The frontend uses HTTP calls centralized in `frontend/src/api.js`. Run `make run` and `make frontend` from week2 in separate terminals. The Node frontend server proxies `/api` to this backend, by default at http://127.0.0.1:8000. Set `BACKEND_URL` for another backend origin. Every successful event operation returns the full event object.
 
-CORS allows `http://localhost:5173` and `http://127.0.0.1:5173`. Override with a comma-separated `CORS_ORIGINS` environment variable. Use the backend on port 8000; the existing Node frontend server does not proxy `/api`.
+Open http://localhost:5173/?event=demo to use the seed. Shared links work for clients that can reach the frontend server. CORS also allows direct requests from localhost:5173 and 127.0.0.1:5173; override it with `CORS_ORIGINS`.
 
 ## Tests and lint
 
