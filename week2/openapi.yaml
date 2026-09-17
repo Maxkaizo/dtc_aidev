@@ -11,12 +11,16 @@ info:
     envelope, including group and attendee registration order. After each write,
     the client replaces its event state with this response. Persist events so
     they can be retrieved on another device using their shared event ID.
+    The in-memory backend resets events, accounts, and tokens on restart and seeds
+    the example event with ID "demo" at startup. Run a single worker.
     The frontend constructs its own shared URL as /?event={eventId}; no share-link
     endpoint or share URL field is required.
 
-    No endpoint requires authentication. There are no accounts, credentials,
-    sessions, or identity verification. Anyone with an event ID can read it and
-    append groups or expenses. Selecting a group is local UI state, not login
+    Event endpoints do not require authentication. Optional accounts are available
+    through /auth/register and /auth/login; only /auth/me requires a bearer token.
+    Anyone with an event ID can read it and
+    append groups or expenses. Optional accounts do not grant ownership or restrict
+    event access. Selecting a group is local UI state, not login
     or proof of identity. The paying group may differ from the selected group.
 
     All money is expressed in integer cents in the event's fixed currency.
@@ -34,6 +38,7 @@ tags:
   - name: Events
   - name: Groups
   - name: Expenses
+  - name: Authentication
 paths:
   /events:
     post:
@@ -187,7 +192,81 @@ paths:
           $ref: '#/components/responses/EventNotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
+  /auth/register:
+    post:
+      tags: [Authentication]
+      operationId: register
+      summary: Register an optional account
+      description: Stores an Argon2 password hash. Does not sign in or change public event access.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '201':
+          description: Public account information, without password or hash.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '409':
+          description: Username already registered (case-insensitive).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Exchange credentials for an expiring bearer token
+      description: Returns an opaque token valid for 3600 seconds. Tokens are stored as hashes in memory.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '200':
+          description: Bearer token for optional authenticated operations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /auth/me:
+    get:
+      tags: [Authentication]
+      operationId: getCurrentUser
+      summary: Read the current account
+      description: Requires Authorization header with Bearer followed by a valid unexpired token. No request body.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Public profile of the authenticated account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Opaque expiring token obtained from /auth/login.
   parameters:
     EventId:
       name: eventId
@@ -197,6 +276,20 @@ components:
       schema:
         $ref: '#/components/schemas/Id'
   responses:
+    Unauthorized:
+      description: Missing, invalid, or expired bearer token, or invalid login credentials.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            const: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: unauthorized
+            message: Credenciales o token inválidos o vencidos.
     EventResponse:
       description: Complete saved event.
       content:
@@ -228,6 +321,46 @@ components:
             code: validation_error
             message: Revisa los datos enviados.
   schemas:
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          pattern: '^[a-zA-Z0-9_.-]+$'
+          description: Trimmed and converted to lowercase; case-insensitive unique username.
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          writeOnly: true
+          description: Preserved exactly, without trimming; stored only as an Argon2 hash.
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, username]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        username:
+          type: string
+    Token:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          minLength: 1
+        token_type:
+          type: string
+          const: bearer
+        expires_in:
+          type: integer
+          const: 3600
     Id:
       type: string
       minLength: 1
@@ -394,7 +527,7 @@ components:
       properties:
         code:
           type: string
-          enum: [event_not_found, validation_error]
+          enum: [event_not_found, validation_error, unauthorized, username_taken]
         message:
           type: string
           minLength: 1
